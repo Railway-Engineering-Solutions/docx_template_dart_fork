@@ -208,7 +208,8 @@ class DocxRelsEntry extends DocxXmlEntry {
     // If doc is null but _rels has been modified, create XML from _rels
     if (doc == null) {
       // Create XML string directly from _rels element
-      final xmlString = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${_rels.toXmlString(pretty: false)}';
+      final xmlString =
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${_rels.toXmlString(pretty: false)}';
       List<int> out = utf8.encode(xmlString);
       _updateData(arch, out);
     } else {
