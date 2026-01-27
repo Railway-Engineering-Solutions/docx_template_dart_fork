@@ -84,6 +84,53 @@ class DocxRelsEntry extends DocxXmlEntry {
     return 'image$_imageId';
   }
 
+  /// Initialize _id based on the highest existing relationship ID
+  void _initializeIdFromExistingRelationships() {
+    int maxId = 1000;
+    for (var rel in _rels.descendants) {
+      if (rel is XmlElement && rel.name.local == 'Relationship') {
+        final idAttr = rel.getAttribute('Id');
+        if (idAttr != null && idAttr.startsWith('rId')) {
+          try {
+            final idNum = int.parse(idAttr.substring(3));
+            if (idNum > maxId) {
+              maxId = idNum;
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        }
+      }
+    }
+    _id = maxId;
+  }
+
+  /// Initialize _imageId based on existing image files in the archive
+  void _initializeImageIdFromArchive(Archive arch) {
+    int maxImageId = 1000;
+    for (var file in arch.files) {
+      if (file.name.startsWith('word/media/image') && file.name.contains('.')) {
+        try {
+          // Extract image ID from filename like "word/media/image123.jpg"
+          final parts = file.name.split('/');
+          if (parts.length >= 3) {
+            final filename = parts[2];
+            final imagePart = filename.split('.')[0];
+            if (imagePart.startsWith('image')) {
+              final idNum = int.parse(imagePart.substring(5));
+              if (idNum > maxImageId) {
+                maxImageId = idNum;
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+    }
+    _imageId = maxImageId;
+  }
+
   DocxRel? getRel(String id) {
     final el = _rels.descendants.firstWhereOrNull((e) =>
         e is XmlElement &&
@@ -139,7 +186,35 @@ class DocxRelsEntry extends DocxXmlEntry {
   @override
   void _load(Archive arch, String entryName) {
     super._load(arch, entryName);
-    _rels = doc!.rootElement;
+    if (doc != null) {
+      _rels = doc!.rootElement;
+      // Initialize IDs based on existing relationships and images to avoid conflicts
+      _initializeIdFromExistingRelationships();
+    } else {
+      // If document doesn't exist, create a temporary relationships structure
+      // This ensures _rels is always initialized (required since it's 'late')
+      final tempDoc = XmlDocument.parse(
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
+      _rels = tempDoc.rootElement;
+      // Note: We can't set _doc here as it's private, but _rels is initialized
+      // The document will be created when _updateArchive is called if needed
+    }
+    // Always initialize image ID from archive, even if relationships file doesn't exist
+    _initializeImageIdFromArchive(arch);
+  }
+
+  @override
+  void _updateArchive(Archive arch) {
+    // If doc is null but _rels has been modified, create XML from _rels
+    if (doc == null) {
+      // Create XML string directly from _rels element
+      final xmlString = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${_rels.toXmlString(pretty: false)}';
+      List<int> out = utf8.encode(xmlString);
+      _updateData(arch, out);
+    } else {
+      // Use parent implementation if doc exists
+      super._updateArchive(arch);
+    }
   }
 }
 

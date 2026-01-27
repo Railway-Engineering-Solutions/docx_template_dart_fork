@@ -426,14 +426,20 @@ class ImgView extends View<ImageContent?> {
               final ext = path.extension(base);
               final imageId = relsEntry.nextImageId();
 
+              // Generate a new relationship ID for each image instance
+              // This ensures each row gets its own unique image relationship
+              final newRelId = relsEntry.nextId();
+
               final newRel = DocxRel(
-                  idAttr,
+                  newRelId,
                   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
                   'media/$imageId$ext');
 
-              relsEntry.update(idAttr, newRel);
+              // Add a new relationship entry instead of updating the existing one
+              relsEntry.add(newRelId, newRel);
 
-              pr.setAttribute('r:embed', idAttr);
+              // Update the r:embed attribute to use the new relationship ID
+              pr.setAttribute('r:embed', newRelId);
 
               vm.docxManager
                   .add('word/media/$imageId$ext', DocxBinEntry(c.img));
