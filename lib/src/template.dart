@@ -533,6 +533,78 @@ class DocxTemplate {
       ..addAll(keep);
   }
 
+  /// Replace the content of one cell in [tIdx]/[rowIdx] at [cellIdx]. The
+  /// cell's `<w:tcPr>` (column properties) is preserved; existing paragraphs
+  /// inside the cell are dropped and a single new paragraph is written. If
+  /// [sdtTag] is provided the new paragraph contains an SDT (so the existing
+  /// fill pipeline picks it up); otherwise it is plain text.
+  ///
+  /// Use this for inspection-style tables where each step lives as one row
+  /// of a shared table and only specific empty cells (e.g. the Pass/Fail
+  /// column) should receive backfill placeholders.
+  ///
+  /// Throws if any index is out of range.
+  void replaceCellContent({
+    required int tIdx,
+    required int rowIdx,
+    required int cellIdx,
+    required String text,
+    String? sdtTag,
+    String? sdtAlias,
+    SdtIdAllocator? idAllocator,
+  }) {
+    final table = _findTable(tIdx);
+    final rows = table.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tr')
+        .toList();
+    if (rowIdx < 0 || rowIdx >= rows.length) {
+      throw DocxTemplateException(
+        'Row index $rowIdx out of range (table $tIdx has ${rows.length} rows)',
+      );
+    }
+    final row = rows[rowIdx];
+    final cells = row.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tc')
+        .toList();
+    if (cellIdx < 0 || cellIdx >= cells.length) {
+      throw DocxTemplateException(
+        'Cell index $cellIdx out of range (row $rowIdx has ${cells.length} cells)',
+      );
+    }
+    final cell = cells[cellIdx];
+
+    // Preserve <w:tcPr> if present; everything else (paragraphs, nested
+    // tables) is replaced with a single new paragraph carrying the placeholder.
+    final tcPr = cell.children
+        .whereType<XmlElement>()
+        .firstWhereOrNull((e) => e.name.local == 'tcPr');
+
+    final w = (String local) => XmlName(local, 'w');
+    final XmlElement paragraphContent;
+    if (sdtTag != null) {
+      final allocator = idAllocator ?? SdtIdAllocator();
+      paragraphContent = XmlElement(w('p'), [], [
+        buildSdt(
+          tag: sdtTag,
+          alias: sdtAlias ?? sdtTag,
+          id: allocator.next(),
+          contentChildren: [buildRun(text: text)],
+        ),
+      ]);
+    } else {
+      paragraphContent = XmlElement(w('p'), [], [buildRun(text: text)]);
+    }
+
+    cell.children
+      ..clear()
+      ..addAll([
+        if (tcPr != null) tcPr.copy(),
+        paragraphContent,
+      ]);
+  }
+
   /// Re-encode the (potentially edited) archive into DOCX bytes. Use this
   /// instead of [generate] when you have only edited the document, not run
   /// template filling.

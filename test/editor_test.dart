@@ -202,6 +202,67 @@ void main() {
       expect(tags.allTags.map((t) => t.name).toList(), contains('title'));
     });
 
+    test('replaceCellContent tags one cell, keeps siblings intact', () async {
+      final bytes = _buildDocx(
+        '<w:tbl>'
+        '<w:tr><w:tc><w:p><w:r><w:t>Header A</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t>Header B</w:t></w:r></w:p></w:tc></w:tr>'
+        '<w:tr><w:tc><w:p><w:r><w:t>Item one</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc></w:tr>'
+        '<w:tr><w:tc><w:p><w:r><w:t>Item two</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc></w:tr>'
+        '</w:tbl>',
+      );
+
+      final docx = await DocxTemplate.fromBytes(bytes);
+      docx.replaceCellContent(
+        tIdx: 0,
+        rowIdx: 1,
+        cellIdx: 1,
+        text: '',
+        sdtTag: 'step/1/complete',
+      );
+      docx.replaceCellContent(
+        tIdx: 0,
+        rowIdx: 2,
+        cellIdx: 1,
+        text: '',
+        sdtTag: 'step/2/complete',
+      );
+
+      final out = await docx.save();
+      final reloaded = await DocxTemplate.fromBytes(out!);
+      final tagNames =
+          reloaded.getTagsEnhanced().allTags.map((t) => t.name).toList();
+      expect(tagNames, contains('step/1/complete'));
+      expect(tagNames, contains('step/2/complete'));
+
+      // Description column (cell 0) untouched — still contains literal text.
+      final xml = _readDocumentXml(out);
+      final body = xml.descendants
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'body');
+      final dataRows = body
+          .descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'tr')
+          .skip(1)
+          .toList();
+      expect(dataRows.length, 2);
+      final firstDescCell = dataRows[0]
+          .children
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'tc')
+          .first;
+      final descText = firstDescCell
+          .descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 't')
+          .map((e) => e.innerText)
+          .join();
+      expect(descText, 'Item one');
+    });
+
     test('out-of-range indices throw', () async {
       final bytes = _buildDocx(
         '<w:p><w:r><w:t>only</w:t></w:r></w:p>',
