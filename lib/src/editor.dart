@@ -42,37 +42,39 @@ class DocxTableInfo {
 /// One cell in a [TemplatedRow]. The cell will be written as a paragraph
 /// containing a single SDT with the given tag/alias and placeholder text.
 class TemplatedCell {
-  TemplatedCell({
+  /// If [alias] is omitted it defaults to [tag]. The existing fill pipeline
+  /// keys lookups off the alias, so for tags containing `/` the alias must
+  /// match the full path verbatim or the tag won't resolve at fill time.
+  const TemplatedCell({
     required this.tag,
-    String? alias,
+    this.alias,
     this.placeholder,
-  }) : alias = alias ?? tag;
+  });
 
   final String tag;
-  final String alias;
+  final String? alias;
   final String? placeholder;
+
+  String get effectiveAlias => alias ?? tag;
 }
 
 /// Recipe for the single data row inserted by [DocxTemplate.rewriteTableRows].
 ///
 /// The row is wrapped in an outer SDT (`wrapperTag` / `wrapperAlias`) so that
 /// the existing template engine recognises it as a table tag and repeats the
-/// row per content item at fill time.
+/// row per content item at fill time. If [wrapperAlias] is omitted it
+/// defaults to [wrapperTag] — the fill pipeline keys lookups off the alias,
+/// so they must match for paths containing `/`.
 class TemplatedRow {
   TemplatedRow({
     required this.wrapperTag,
     String? wrapperAlias,
     required this.cells,
-  }) : wrapperAlias = wrapperAlias ?? _defaultAlias(wrapperTag);
+  }) : wrapperAlias = wrapperAlias ?? wrapperTag;
 
   final String wrapperTag;
   final String wrapperAlias;
   final List<TemplatedCell> cells;
-
-  static String _defaultAlias(String tag) {
-    final parts = tag.split('/');
-    return parts.isEmpty ? tag : parts.last;
-  }
 }
 
 /// Allocates monotonically increasing SDT id values within an editing session.

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:archive/archive.dart';
 import 'package:docx_template/docx_template.dart';
 import 'package:test/test.dart';

@@ -457,7 +457,7 @@ class DocxTemplate {
       newChildren.add(
         buildSdt(
           tag: sdtTag,
-          alias: sdtAlias ?? sdtTag.split('/').last,
+          alias: sdtAlias ?? sdtTag,
           id: allocator.next(),
           contentChildren: [buildRun(text: text)],
         ),
@@ -625,7 +625,7 @@ class DocxTemplate {
 
       final paragraphContent = buildSdt(
         tag: cellRecipe.tag,
-        alias: cellRecipe.alias,
+        alias: cellRecipe.effectiveAlias,
         id: idAllocator.next(),
         contentChildren: [
           buildRun(text: cellRecipe.placeholder ?? ''),
