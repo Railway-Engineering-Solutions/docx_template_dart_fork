@@ -6,6 +6,7 @@ import 'package:docx_template/src/view_manager.dart';
 import 'package:xml/xml.dart';
 
 import 'docx_entry.dart';
+import 'editor.dart';
 
 class DocxTemplateException implements Exception {
   final String message;
@@ -360,4 +361,285 @@ class DocxTemplate {
 
     return enc.encode(_manager.arch);
   }
+
+  // ---------------------------------------------------------------------------
+  // Editing API
+  //
+  // The methods below operate on the DOCX as a static document — they do not
+  // perform template filling. They let a caller take an arbitrary user-uploaded
+  // DOCX, inspect its top-level body structure by stable indices, and rewrite
+  // paragraphs and tables in place to insert SDT-based template tags. The
+  // intended workflow is:
+  //
+  //   1. fromBytes(...) — load the user's DOCX
+  //   2. getEditableStructure() — get indexed paragraphs & tables
+  //   3. Make decisions about which content maps to which template tag
+  //      (typically with help from an LLM)
+  //   4. replaceParagraphText(...) / rewriteTableRows(...) — apply edits
+  //   5. save() — get the rewritten DOCX bytes
+  //
+  // The output is intended to be consumed by the existing fill pipeline
+  // (generate(...)), so the edits write proper SDT structures with alias/tag/id.
+  // ---------------------------------------------------------------------------
+
+  XmlElement get _body {
+    final docEntry = _manager.getEntry(() => DocxXmlEntry(), 'word/document.xml');
+    final doc = docEntry?.doc;
+    if (doc == null) {
+      throw DocxTemplateException('word/document.xml missing or unreadable');
+    }
+    final body = doc.rootElement.children
+        .whereType<XmlElement>()
+        .firstWhereOrNull((e) => e.name.local == 'body');
+    if (body == null) {
+      throw DocxTemplateException('word/document.xml has no <w:body>');
+    }
+    return body;
+  }
+
+  List<XmlElement> get _topLevelChildren =>
+      _body.children.whereType<XmlElement>().toList();
+
+  /// Snapshot the top-level body of the document so a caller can address
+  /// paragraphs and tables by stable 0-based indices.
+  DocxEditableStructure getEditableStructure() {
+    final paragraphs = <DocxParagraphInfo>[];
+    final tables = <DocxTableInfo>[];
+
+    var pIdx = 0;
+    var tIdx = 0;
+    for (final el in _topLevelChildren) {
+      switch (el.name.local) {
+        case 'p':
+          paragraphs.add(
+            DocxParagraphInfo(pIdx: pIdx, text: _paragraphText(el)),
+          );
+          pIdx++;
+          break;
+        case 'tbl':
+          tables.add(DocxTableInfo(tIdx: tIdx, rows: _tableRowText(el)));
+          tIdx++;
+          break;
+        default:
+          // Ignore sectPr and other body-level structural elements.
+          break;
+      }
+    }
+
+    return DocxEditableStructure(paragraphs: paragraphs, tables: tables);
+  }
+
+  /// Replace the text content of the paragraph at the given top-level index.
+  ///
+  /// Existing runs are removed; the paragraph's `<w:pPr>` is preserved. If
+  /// [sdtTag] is provided, the new text is wrapped in a `<w:sdt>` block so the
+  /// fill pipeline picks it up as a template tag; otherwise the text is written
+  /// as plain runs.
+  ///
+  /// Throws if [pIdx] is out of range.
+  void replaceParagraphText({
+    required int pIdx,
+    required String text,
+    String? sdtTag,
+    String? sdtAlias,
+    SdtIdAllocator? idAllocator,
+  }) {
+    final paragraph = _findParagraph(pIdx);
+    final pPr = paragraph.children
+        .whereType<XmlElement>()
+        .firstWhereOrNull((e) => e.name.local == 'pPr');
+
+    final newChildren = <XmlNode>[];
+    if (pPr != null) newChildren.add(pPr.copy());
+
+    if (sdtTag != null) {
+      final allocator = idAllocator ?? SdtIdAllocator();
+      newChildren.add(
+        buildSdt(
+          tag: sdtTag,
+          alias: sdtAlias ?? sdtTag.split('/').last,
+          id: allocator.next(),
+          contentChildren: [buildRun(text: text)],
+        ),
+      );
+    } else {
+      newChildren.add(buildRun(text: text));
+    }
+
+    paragraph.children
+      ..clear()
+      ..addAll(newChildren);
+  }
+
+  /// Keep [keepHeaderRows] rows of the table at [tIdx] and replace all
+  /// remaining rows with a single SDT-wrapped templated row.
+  ///
+  /// The number of cells in the templated row should match the table's column
+  /// count; if it doesn't, the row is written as-is and the table grid will
+  /// determine final layout.
+  ///
+  /// Throws if [tIdx] is out of range or if the table has fewer than
+  /// [keepHeaderRows] rows.
+  void rewriteTableRows({
+    required int tIdx,
+    required int keepHeaderRows,
+    required TemplatedRow templateRow,
+    SdtIdAllocator? idAllocator,
+  }) {
+    final table = _findTable(tIdx);
+    final rows = table.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tr')
+        .toList();
+    if (rows.length < keepHeaderRows) {
+      throw DocxTemplateException(
+        'Table $tIdx has ${rows.length} rows, cannot keep $keepHeaderRows headers',
+      );
+    }
+
+    // Use the first data row (or header) as the cell-shape template so we
+    // preserve column widths via the existing <w:tcPr>/<w:trPr> properties.
+    final shapeRow =
+        rows.length > keepHeaderRows ? rows[keepHeaderRows] : rows.last;
+
+    final allocator = idAllocator ?? SdtIdAllocator();
+    final newDataRow =
+        _buildTemplatedRow(shapeRow: shapeRow, templateRow: templateRow, idAllocator: allocator);
+
+    final wrappedRow = buildSdt(
+      tag: templateRow.wrapperTag,
+      alias: templateRow.wrapperAlias,
+      id: allocator.next(),
+      contentChildren: [newDataRow],
+    );
+
+    // Remove existing data rows; keep header rows in place; append wrapped row.
+    final keep = <XmlNode>[];
+    var trCount = 0;
+    for (final node in table.children) {
+      if (node is XmlElement && node.name.local == 'tr') {
+        if (trCount < keepHeaderRows) {
+          keep.add(node.copy());
+        }
+        trCount++;
+      } else {
+        keep.add(node.copy());
+      }
+    }
+    keep.add(wrappedRow);
+
+    table.children
+      ..clear()
+      ..addAll(keep);
+  }
+
+  /// Re-encode the (potentially edited) archive into DOCX bytes. Use this
+  /// instead of [generate] when you have only edited the document, not run
+  /// template filling.
+  Future<List<int>?> save() async {
+    _manager.updateArch();
+    return ZipEncoder().encode(_manager.arch);
+  }
+
+  XmlElement _findParagraph(int pIdx) {
+    var i = 0;
+    for (final el in _topLevelChildren) {
+      if (el.name.local == 'p') {
+        if (i == pIdx) return el;
+        i++;
+      }
+    }
+    throw DocxTemplateException('Paragraph index $pIdx out of range ($i)');
+  }
+
+  XmlElement _findTable(int tIdx) {
+    var i = 0;
+    for (final el in _topLevelChildren) {
+      if (el.name.local == 'tbl') {
+        if (i == tIdx) return el;
+        i++;
+      }
+    }
+    throw DocxTemplateException('Table index $tIdx out of range ($i)');
+  }
+
+  String _paragraphText(XmlElement paragraph) {
+    final buf = StringBuffer();
+    for (final t in paragraph.descendants.whereType<XmlElement>()) {
+      if (t.name.local == 't') buf.write(t.innerText);
+    }
+    return buf.toString();
+  }
+
+  List<List<String>> _tableRowText(XmlElement table) {
+    final rows = <List<String>>[];
+    for (final tr in table.children.whereType<XmlElement>()) {
+      if (tr.name.local != 'tr') continue;
+      final cells = <String>[];
+      for (final tc in tr.children.whereType<XmlElement>()) {
+        if (tc.name.local != 'tc') continue;
+        final buf = StringBuffer();
+        for (final t in tc.descendants.whereType<XmlElement>()) {
+          if (t.name.local == 't') {
+            if (buf.isNotEmpty) buf.write(' ');
+            buf.write(t.innerText);
+          }
+        }
+        cells.add(buf.toString());
+      }
+      rows.add(cells);
+    }
+    return rows;
+  }
+
+  XmlElement _buildTemplatedRow({
+    required XmlElement shapeRow,
+    required TemplatedRow templateRow,
+    required SdtIdAllocator idAllocator,
+  }) {
+    final w = (String local) => XmlName(local, 'w');
+
+    // Copy <w:trPr> if present so row height/header settings are preserved.
+    final trPr = shapeRow.children
+        .whereType<XmlElement>()
+        .firstWhereOrNull((e) => e.name.local == 'trPr');
+
+    final shapeCells = shapeRow.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tc')
+        .toList();
+
+    final newCells = <XmlElement>[];
+    for (var i = 0; i < templateRow.cells.length; i++) {
+      final cellRecipe = templateRow.cells[i];
+      // Preserve <w:tcPr> from the matching shape cell so column widths stay.
+      final shapeTcPr = i < shapeCells.length
+          ? shapeCells[i]
+              .children
+              .whereType<XmlElement>()
+              .firstWhereOrNull((e) => e.name.local == 'tcPr')
+          : null;
+
+      final cellChildren = <XmlNode>[];
+      if (shapeTcPr != null) cellChildren.add(shapeTcPr.copy());
+
+      final paragraphContent = buildSdt(
+        tag: cellRecipe.tag,
+        alias: cellRecipe.alias,
+        id: idAllocator.next(),
+        contentChildren: [
+          buildRun(text: cellRecipe.placeholder ?? ''),
+        ],
+      );
+
+      cellChildren.add(XmlElement(w('p'), [], [paragraphContent]));
+      newCells.add(XmlElement(w('tc'), [], cellChildren));
+    }
+
+    return XmlElement(w('tr'), [], [
+      if (trPr != null) trPr.copy(),
+      ...newCells,
+    ]);
+  }
 }
+

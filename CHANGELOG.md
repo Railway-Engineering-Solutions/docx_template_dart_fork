@@ -78,3 +78,15 @@
             text: "My new link",
             url: "https://www.youtube.com/",
         ))
+
+## 0.5.0
+- Added editing API for in-place document rewriting (separate from template fill):
+  - `DocxTemplate.getEditableStructure()` — snapshot top-level paragraphs and
+    tables with stable 0-based indices.
+  - `DocxTemplate.replaceParagraphText()` — replace a paragraph's text, optionally
+    wrapping it in an SDT tag so the existing fill pipeline picks it up.
+  - `DocxTemplate.rewriteTableRows()` — keep N header rows of a table and replace
+    the data rows with a single SDT-wrapped templated row.
+  - `DocxTemplate.save()` — re-encode the edited archive without running fill.
+- New exports: `DocxEditableStructure`, `DocxParagraphInfo`, `DocxTableInfo`,
+  `TemplatedRow`, `TemplatedCell`, `SdtIdAllocator`, `DocxTemplateException`.
