@@ -137,13 +137,12 @@ class TextView extends View<TextContent?> {
         final lines = text.split('\n');
         for (var l in lines) {
           if (l == lines.first) {
-            // Update exists T tag
-            t.children[0] = XmlText(l);
+            _setTText(t as XmlElement, l);
           } else {
             // Make T tag copy and add to R
             final XmlElement tCp =
                 XmlCopyVisitor().visitElement(t as XmlElement)!;
-            tCp.children[0] = XmlText(l);
+            _setTText(tCp, l);
             r.children.insert(pasteIndex++, tCp);
           }
           r.children.insert(pasteIndex++, _brElement());
@@ -153,8 +152,19 @@ class TextView extends View<TextContent?> {
           }
         }
       } else {
-        t.children[0] = XmlText(text!);
+        _setTText(t as XmlElement, text!);
       }
+    }
+  }
+
+  /// Replace the text content of a `<w:t>` element. Handles the case where
+  /// the source element was self-closing (no child text node) — assigning to
+  /// `t.children[0]` would otherwise throw RangeError on those.
+  void _setTText(XmlElement t, String text) {
+    if (t.children.isEmpty) {
+      t.children.add(XmlText(text));
+    } else {
+      t.children[0] = XmlText(text);
     }
   }
 }

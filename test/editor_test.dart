@@ -263,6 +263,38 @@ void main() {
       expect(descText, 'Item one');
     });
 
+    test('fill works on edited template even when placeholder text was empty',
+        () async {
+      // Regression: writing replaceParagraphText/replaceCellContent with
+      // text='' would produce <w:t xml:space="preserve"/> which becomes a
+      // self-closing tag with NO child text node after save → reload. The
+      // fill pipeline previously did `t.children[0] = XmlText(value)` and
+      // crashed with RangeError. _setTText now handles this case.
+      final bytes = _buildDocx(
+        '<w:p><w:r><w:t>Will become title</w:t></w:r></w:p>',
+      );
+      final docx = await DocxTemplate.fromBytes(bytes);
+      docx.replaceParagraphText(pIdx: 0, text: '', sdtTag: 'title');
+      final templateBytes = (await docx.save())!;
+
+      // Round-trip: load the edited template and fill it as if at shift time.
+      final filled = await DocxTemplate.fromBytes(templateBytes);
+      final content = Content()..add(TextContent('title', 'Lubricate Bearings'));
+      final outBytes = await filled.generate(content);
+      expect(outBytes, isNotNull);
+
+      // Verify the fill substituted the value.
+      final reloaded = await DocxTemplate.fromBytes(outBytes!);
+      final allText = ZipDecoder()
+          .decodeBytes(outBytes)
+          .files
+          .firstWhere((f) => f.name == 'word/document.xml');
+      final xml = String.fromCharCodes(allText.content as List<int>);
+      expect(xml, contains('Lubricate Bearings'));
+      // Suppress unused-variable for the reload integrity check.
+      expect(reloaded.getTagsEnhanced().allTags, isNotEmpty);
+    });
+
     test('out-of-range indices throw', () async {
       final bytes = _buildDocx(
         '<w:p><w:r><w:t>only</w:t></w:r></w:p>',
