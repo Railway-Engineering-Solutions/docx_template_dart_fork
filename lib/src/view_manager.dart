@@ -192,6 +192,58 @@ class ViewManager {
         }
       }
     }
+    _stripLeakedViewElements();
+  }
+
+  /// Defensive cleanup: walk every doc/header XML and unwrap any element
+  /// whose name matches a View marker — `<text>`, `<table>`, `<plain>`,
+  /// `<list>`, `<img>`, `<link>` — and whose namespace prefix is missing.
+  /// These are leftover [View] elements that the main produce pass didn't
+  /// reach (e.g. nested under a TextView whose own produce returned its
+  /// children verbatim, or in document parts the produce loop didn't
+  /// iterate). Without this pass they serialise as bare `<text>` etc. and
+  /// Word refuses to open the file.
+  void _stripLeakedViewElements() {
+    const viewTags = {'text', 'table', 'plain', 'list', 'img', 'link'};
+    void unwrap(XmlElement node) {
+      // Iterate over a copy so we can mutate children safely.
+      final children = List<XmlNode>.from(node.children);
+      for (final child in children) {
+        if (child is XmlElement) {
+          final isLeakedView =
+              child.name.prefix == null && viewTags.contains(child.name.local);
+          if (isLeakedView) {
+            // Recurse first so nested leaks are also handled.
+            unwrap(child);
+            // Replace the leaked element with its children in the parent.
+            final idx = node.children.indexOf(child);
+            if (idx >= 0) {
+              final replacement = List<XmlNode>.from(child.children);
+              for (final c in replacement) {
+                if (c.parent != null) c.parent!.children.remove(c);
+              }
+              node.children.removeAt(idx);
+              node.children.insertAll(idx, replacement);
+            }
+          } else {
+            unwrap(child);
+          }
+        }
+      }
+    }
+
+    void unwrapDoc(String entryName) {
+      final entry = docxManager.getEntry(() => DocxXmlEntry(), entryName);
+      final doc = entry?.doc;
+      if (doc != null) unwrap(doc.rootElement);
+    }
+
+    unwrapDoc('word/document.xml');
+    for (final f in docxManager.arch) {
+      if (f.name.contains('header') && !f.name.contains('.rels')) {
+        unwrapDoc('word/${f.name.split('/').last}');
+      }
+    }
   }
 
   List<XmlElement> _produceInner(Content? c, View v) {

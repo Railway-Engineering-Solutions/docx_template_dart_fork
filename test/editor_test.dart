@@ -305,6 +305,39 @@ void main() {
       expect(reloaded.getTagsEnhanced().allTags, isNotEmpty);
     });
 
+    test('post-fill cleanup strips bare <text>/<table> View leftovers',
+        () async {
+      // Regression: ViewManager replaces SDTs with View elements whose
+      // XmlName has no namespace prefix (e.g. "text"). When some Views
+      // never get fully replaced by produce() (nested-under-TextView,
+      // missing content keys, etc.) they used to leak into the output as
+      // bare `<text>` elements — which Word rejects as malformed OOXML.
+      // _stripLeakedViewElements scrubs them at the end of produce.
+      //
+      // We trigger the leak by injecting a bare <text> element directly
+      // and verifying generate() removes it.
+      final bytes = _buildDocx(
+        '<w:p><w:r><w:t>Before</w:t></w:r></w:p>'
+        '<w:p><text><w:r><w:t>Inner</w:t></w:r></text></w:p>'
+        '<w:p><w:r><w:t>After</w:t></w:r></w:p>',
+      );
+      final docx = await DocxTemplate.fromBytes(bytes);
+      final out = await docx.generate(Content());
+      final reloadedXml = String.fromCharCodes(
+        ZipDecoder()
+            .decodeBytes(out!)
+            .files
+            .firstWhere((f) => f.name == 'word/document.xml')
+            .content as List<int>,
+      );
+      expect(
+        reloadedXml,
+        isNot(contains('<text>')),
+        reason: 'bare <text> View leaks must be unwrapped before saving',
+      );
+      expect(reloadedXml, contains('Inner'));
+    });
+
     test('out-of-range indices throw', () async {
       final bytes = _buildDocx(
         '<w:p><w:r><w:t>only</w:t></w:r></w:p>',
