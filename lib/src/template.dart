@@ -680,6 +680,98 @@ class DocxTemplate {
       ]);
   }
 
+  /// Like [replaceCellContent] but writes an *image* SDT instead of a text
+  /// one — for cells that should resolve to an image at fill time
+  /// (e.g. signee/signature). Adds a placeholder PNG to the archive and a
+  /// matching relationship under `word/_rels/document.xml.rels`, then
+  /// inserts an SDT containing a properly-shaped `<w:drawing>` element so
+  /// the fill pipeline classifies it as an `ImgView`.
+  ///
+  /// The placeholder image is replaced by the real bytes at fill time;
+  /// the size in EMU here defines the rendered box size.
+  /// (914400 EMU = 1 inch.) Defaults give a ~2 in × 0.5 in signature box.
+  ///
+  /// Throws if any index is out of range or if `word/_rels/document.xml.rels`
+  /// is missing.
+  void replaceCellContentWithImage({
+    required int tIdx,
+    required int rowIdx,
+    required int cellIdx,
+    required String sdtAlias,
+    String sdtTag = 'img',
+    int widthEmu = 1828800,
+    int heightEmu = 457200,
+    SdtIdAllocator? idAllocator,
+  }) {
+    final relsEntry = _manager.getEntry(
+      () => DocxRelsEntry(),
+      'word/_rels/document.xml.rels',
+    );
+    if (relsEntry == null) {
+      throw DocxTemplateException(
+        'word/_rels/document.xml.rels missing — cannot add image relationship',
+      );
+    }
+
+    final imageId = relsEntry.nextImageId();
+    final relId = relsEntry.nextId();
+    final mediaPath = 'word/media/$imageId.png';
+    relsEntry.add(
+      relId,
+      DocxRel(
+        relId,
+        'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+        'media/$imageId.png',
+      ),
+    );
+    _manager.add(mediaPath, DocxBinEntry(kPlaceholderPngBytes));
+
+    final allocator = idAllocator ?? SdtIdAllocator();
+    final imgSdt = buildImageSdt(
+      tag: sdtTag,
+      alias: sdtAlias,
+      id: allocator.next(),
+      relId: relId,
+      widthEmu: widthEmu,
+      heightEmu: heightEmu,
+      docPrId: int.parse(imageId.replaceAll('image', '')),
+    );
+
+    // Replace the cell's children using the same logic as
+    // replaceCellContent, but with the image SDT. Preserve <w:tcPr>.
+    final table = _findTable(tIdx);
+    final rows = table.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tr')
+        .toList();
+    if (rowIdx < 0 || rowIdx >= rows.length) {
+      throw DocxTemplateException(
+        'Row index $rowIdx out of range (table $tIdx has ${rows.length} rows)',
+      );
+    }
+    final row = rows[rowIdx];
+    final cells = row.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tc')
+        .toList();
+    if (cellIdx < 0 || cellIdx >= cells.length) {
+      throw DocxTemplateException(
+        'Cell index $cellIdx out of range (row $rowIdx has ${cells.length} cells)',
+      );
+    }
+    final cell = cells[cellIdx];
+    final tcPr = cell.children
+        .whereType<XmlElement>()
+        .firstWhereOrNull((e) => e.name.local == 'tcPr');
+
+    cell.children
+      ..clear()
+      ..addAll([
+        if (tcPr != null) tcPr.copy(),
+        imgSdt,
+      ]);
+  }
+
   /// Re-encode the (potentially edited) archive into DOCX bytes. Use this
   /// instead of [generate] when you have only edited the document, not run
   /// template filling.
