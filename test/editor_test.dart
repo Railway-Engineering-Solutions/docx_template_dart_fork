@@ -163,14 +163,24 @@ void main() {
           .toList();
       expect(directRows.length, 1, reason: 'old data rows must be removed');
 
-      // Wrapper SDT with tag step/1/checkitems wraps a single tr.
+      // Wrapper SDT must use tag="table" (RowView marker) and put the
+      // data binding (step/1/checkitems) in the alias. Without the
+      // tag="table" the fill pipeline classifies it as a TextView and
+      // the templated row never repeats per check item.
       final sdt = table.children
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'sdt');
-      final wrapperTag = sdt.descendants
+      final wrapperSdtPr = sdt.children
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'sdtPr');
+      final wrapperTag = wrapperSdtPr.children
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'tag');
-      expect(wrapperTag.getAttribute('val', namespace: '*'),
+      final wrapperAlias = wrapperSdtPr.children
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'alias');
+      expect(wrapperTag.getAttribute('val', namespace: '*'), 'table');
+      expect(wrapperAlias.getAttribute('val', namespace: '*'),
           'step/1/checkitems');
 
       final innerRows = sdt.descendants
@@ -179,13 +189,13 @@ void main() {
           .toList();
       expect(innerRows.length, 1);
 
-      // Two cells, each with an SDT for text & complete.
-      final cellTags = sdt.descendants
+      // Inner cell SDTs use tag="text" with the data binding in alias.
+      final cellAliases = innerRows.first.descendants
           .whereType<XmlElement>()
-          .where((e) => e.name.local == 'tag')
+          .where((e) => e.name.local == 'alias')
           .map((e) => e.getAttribute('val', namespace: '*'))
           .toList();
-      expect(cellTags, containsAll(['step/1/checkitems', 'text', 'complete']));
+      expect(cellAliases, containsAll(['text', 'complete']));
     });
 
     test('round-trips: edited DOCX is recognised by getTagsEnhanced', () async {

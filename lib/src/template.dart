@@ -506,8 +506,14 @@ class DocxTemplate {
     final newDataRow =
         _buildTemplatedRow(shapeRow: shapeRow, templateRow: templateRow, idAllocator: allocator);
 
+    // The wrapper SDT must use the literal tag value "table" so the fill
+    // pipeline (ViewManager._processSdt) classifies it as a RowView and
+    // expands the templated row once per content item at fill time.
+    // The data binding (e.g. "step/1/checkitems") goes in the alias.
+    // Setting tag to anything else makes it a TextView, which renders only
+    // a single inert row and silently drops your repeating data.
     final wrappedRow = buildSdt(
-      tag: templateRow.wrapperTag,
+      tag: 'table',
       alias: templateRow.wrapperAlias,
       id: allocator.next(),
       contentChildren: [newDataRow],
@@ -695,9 +701,14 @@ class DocxTemplate {
       final cellChildren = <XmlNode>[];
       if (shapeTcPr != null) cellChildren.add(shapeTcPr.copy());
 
+      // Inner cells inside a `tag="table"` wrapper must themselves use a
+      // type marker (we use "text") in the SDT tag attribute so they
+      // classify as TextView under the parent RowView. The cell's data
+      // binding (e.g. "col/1/text", "complete", "date") goes in the alias
+      // — that's what the fill pipeline routes content against.
       final paragraphContent = buildSdt(
-        tag: cellRecipe.tag,
-        alias: cellRecipe.effectiveAlias,
+        tag: 'text',
+        alias: cellRecipe.tag,
         id: idAllocator.next(),
         contentChildren: [
           buildRun(text: cellRecipe.placeholder ?? ''),
