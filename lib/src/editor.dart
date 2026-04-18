@@ -45,15 +45,27 @@ class TemplatedCell {
   /// If [alias] is omitted it defaults to [tag]. The existing fill pipeline
   /// keys lookups off the alias, so for tags containing `/` the alias must
   /// match the full path verbatim or the tag won't resolve at fill time.
+  ///
+  /// Set [image] to `true` for cells whose binding resolves to an image
+  /// (e.g. `signee/signature`). [DocxTemplate.rewriteTableRows] then
+  /// emits an `ImgView`-classified SDT with a placeholder `<w:drawing>`
+  /// for that cell, mirroring [DocxTemplate.replaceCellContentWithImage]
+  /// for non-table-row cells.
   const TemplatedCell({
     required this.tag,
     this.alias,
     this.placeholder,
+    this.image = false,
+    this.imageWidthEmu = 1828800,
+    this.imageHeightEmu = 457200,
   });
 
   final String tag;
   final String? alias;
   final String? placeholder;
+  final bool image;
+  final int imageWidthEmu;
+  final int imageHeightEmu;
 
   String get effectiveAlias => alias ?? tag;
 }

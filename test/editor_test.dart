@@ -431,6 +431,89 @@ void main() {
       expect(allText, contains('Signature line'));
     });
 
+    test('rewriteTableRows builds image SDTs for image-flagged cells',
+        () async {
+      // A row template with one image cell (e.g. signee/signature) should
+      // emit an SDT classified as ImgView at fill time, with a placeholder
+      // PNG added to word/media/ and a fresh rel pointing at it.
+      final bytes = _buildDocx(
+        '<w:tbl>'
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t>Date</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t>Signature</w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        '</w:tbl>',
+      );
+      final docx = await DocxTemplate.fromBytes(bytes);
+      docx.rewriteTableRows(
+        tIdx: 0,
+        keepHeaderRows: 1,
+        templateRow: TemplatedRow(
+          wrapperTag: 'step/1/rows',
+          cells: [
+            const TemplatedCell(tag: 'date'),
+            const TemplatedCell(tag: 'signee/signature', image: true),
+          ],
+        ),
+      );
+
+      final out = await docx.save();
+      final xml = _readDocumentXml(out!);
+      final aliases = xml.descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'alias')
+          .map((e) => e.getAttribute('val', namespace: '*'))
+          .toList();
+      expect(aliases, contains('step/1/rows'));
+      expect(aliases, contains('date'));
+      expect(aliases, contains('signee/signature'));
+
+      // The signee/signature cell's SDT must be tagged "img" so the fill
+      // pipeline classifies it as ImgView.
+      final sdts = xml.descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'sdt');
+      final sigSdt = sdts.firstWhere((sdt) {
+        final alias = sdt.descendants
+            .whereType<XmlElement>()
+            .firstWhere((e) => e.name.local == 'alias')
+            .getAttribute('val', namespace: '*');
+        return alias == 'signee/signature';
+      });
+      final sigTag = sigSdt.descendants
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'tag')
+          .getAttribute('val', namespace: '*');
+      expect(sigTag, 'img');
+      // And it carries a <w:drawing> with a blip — the placeholder image
+      // ImgView swaps at fill time.
+      expect(
+        sigSdt.descendants
+            .whereType<XmlElement>()
+            .where((e) => e.name.local == 'blip')
+            .length,
+        1,
+      );
+
+      // The date cell remains a plain text SDT.
+      final dateSdt = sdts.firstWhere((sdt) {
+        final alias = sdt.descendants
+            .whereType<XmlElement>()
+            .firstWhere((e) => e.name.local == 'alias')
+            .getAttribute('val', namespace: '*');
+        return alias == 'date';
+      });
+      final dateTag = dateSdt.descendants
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'tag')
+          .getAttribute('val', namespace: '*');
+      expect(dateTag, 'text');
+    });
+
     test('rewriteTableRows respects explicit dataRows override', () async {
       // When the AI knows the data run length precisely, dataRows takes
       // precedence over the auto-detected same-shape window.

@@ -862,19 +862,61 @@ class DocxTemplate {
       final cellChildren = <XmlNode>[];
       if (shapeTcPr != null) cellChildren.add(shapeTcPr.copy());
 
-      // Inner cells inside a `tag="table"` wrapper must themselves use a
-      // type marker (we use "text") in the SDT tag attribute so they
-      // classify as TextView under the parent RowView. The cell's data
-      // binding (e.g. "col/1/text", "complete", "date") goes in the alias
-      // — that's what the fill pipeline routes content against.
-      final paragraphContent = buildSdt(
-        tag: 'text',
-        alias: cellRecipe.tag,
-        id: idAllocator.next(),
-        contentChildren: [
-          buildRun(text: cellRecipe.placeholder ?? ''),
-        ],
-      );
+      // Inner cells inside a `tag="table"` wrapper must themselves carry
+      // a type marker in the SDT tag attribute so the fill pipeline can
+      // classify them under the parent RowView. Use "text" for normal
+      // cells (TextView resolves text bindings) and "img" for image
+      // cells (ImgView swaps the placeholder for ImageContent bytes).
+      // The cell's data binding (e.g. "col/1/text", "complete", "date",
+      // "signee/signature") goes in the alias — that's what the fill
+      // pipeline routes content against.
+      final XmlElement paragraphContent;
+      if (cellRecipe.image) {
+        // Add a placeholder PNG to the archive and a fresh image rel so
+        // the drawing has something concrete to point at. The fill
+        // pipeline replaces both at fill time.
+        final relsEntry = _manager.getEntry(
+          () => DocxRelsEntry(),
+          'word/_rels/document.xml.rels',
+        );
+        if (relsEntry == null) {
+          throw DocxTemplateException(
+            'word/_rels/document.xml.rels missing — cannot add image cell',
+          );
+        }
+        final imageId = relsEntry.nextImageId();
+        final relId = relsEntry.nextId();
+        relsEntry.add(
+          relId,
+          DocxRel(
+            relId,
+            'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+            'media/$imageId.png',
+          ),
+        );
+        _manager.add(
+          'word/media/$imageId.png',
+          DocxBinEntry(kPlaceholderPngBytes),
+        );
+        paragraphContent = buildImageSdt(
+          tag: 'img',
+          alias: cellRecipe.tag,
+          id: idAllocator.next(),
+          relId: relId,
+          widthEmu: cellRecipe.imageWidthEmu,
+          heightEmu: cellRecipe.imageHeightEmu,
+          docPrId: int.parse(imageId.replaceAll('image', '')),
+        );
+      } else {
+        paragraphContent = buildSdt(
+          tag: 'text',
+          alias: cellRecipe.tag,
+          id: idAllocator.next(),
+          contentChildren: [
+            buildRun(text: cellRecipe.placeholder ?? ''),
+          ],
+        );
+      }
 
       cellChildren.add(XmlElement(w('p'), [], [paragraphContent]));
       newCells.add(XmlElement(w('tc'), [], cellChildren));
