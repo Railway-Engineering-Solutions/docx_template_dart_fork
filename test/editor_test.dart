@@ -338,6 +338,133 @@ void main() {
       expect(reloadedXml, contains('Inner'));
     });
 
+    test(
+        'rewriteTableRows preserves trailing rows when shape changes '
+        '(inspection-form pattern)', () async {
+      // Mirror the ITF_12.docx pattern: a single table holds header info,
+      // a 4-cell irregularities sub-section, and trailing 1-cell sign-off
+      // rows. Only the contiguous 4-cell data run should be replaced; the
+      // 1-cell trailing rows must survive into the output.
+      final bytes = _buildDocx(
+        '<w:tbl>'
+        // Header row (4 cells) — keep.
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t>Date</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t>Time</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t>Signature</w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        // Two 4-cell data rows — replace with single wrapper.
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:r><w:t></w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        // Trailing 1-cell rows (different shape) — keep verbatim.
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t>Approved by Manager</w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        '<w:tr>'
+        '<w:tc><w:p><w:r><w:t>Signature line</w:t></w:r></w:p></w:tc>'
+        '</w:tr>'
+        '</w:tbl>',
+      );
+
+      final docx = await DocxTemplate.fromBytes(bytes);
+      docx.rewriteTableRows(
+        tIdx: 0,
+        keepHeaderRows: 1,
+        templateRow: TemplatedRow(
+          wrapperTag: 'step/1/rows',
+          cells: [
+            TemplatedCell(tag: 'date'),
+            TemplatedCell(tag: 'time'),
+            TemplatedCell(tag: 'col/1/text'),
+            TemplatedCell(tag: 'signee/name'),
+          ],
+        ),
+      );
+
+      final out = await docx.save();
+      expect(out, isNotNull);
+      final xml = _readDocumentXml(out!);
+      final table = xml
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'tbl');
+
+      // Direct rows: 1 header + 1 wrapper SDT (not a tr) + 2 trailing trs.
+      // The wrapper SDT is not a w:tr child, so direct tr children = 3.
+      final directRows = table.children
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'tr')
+          .toList();
+      expect(directRows.length, 3,
+          reason:
+              'header + 2 trailing single-cell rows should survive; the two '
+              '4-cell data rows are collapsed into one wrapper SDT');
+
+      // Wrapper SDT exists and uses tag="table" with the right alias.
+      final sdt = table.children
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'sdt');
+      final wrapperAlias = sdt.descendants
+          .whereType<XmlElement>()
+          .firstWhere((e) => e.name.local == 'alias');
+      expect(wrapperAlias.getAttribute('val', namespace: '*'), 'step/1/rows');
+
+      // Trailing rows still carry their literal text — this is the
+      // regression we're guarding against.
+      final allText = table.descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 't')
+          .map((e) => e.innerText)
+          .join(' ');
+      expect(allText, contains('Approved by Manager'));
+      expect(allText, contains('Signature line'));
+    });
+
+    test('rewriteTableRows respects explicit dataRows override', () async {
+      // When the AI knows the data run length precisely, dataRows takes
+      // precedence over the auto-detected same-shape window.
+      final bytes = _buildDocx(
+        '<w:tbl>'
+        '<w:tr><w:tc><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>'
+        '<w:tr><w:tc><w:p><w:r><w:t>D1</w:t></w:r></w:p></w:tc></w:tr>'
+        '<w:tr><w:tc><w:p><w:r><w:t>D2</w:t></w:r></w:p></w:tc></w:tr>'
+        '<w:tr><w:tc><w:p><w:r><w:t>Keep</w:t></w:r></w:p></w:tc></w:tr>'
+        '</w:tbl>',
+      );
+      final docx = await DocxTemplate.fromBytes(bytes);
+      docx.rewriteTableRows(
+        tIdx: 0,
+        keepHeaderRows: 1,
+        dataRows: 2,
+        templateRow: TemplatedRow(
+          wrapperTag: 'step/1/rows',
+          cells: [TemplatedCell(tag: 'text')],
+        ),
+      );
+      final out = await docx.save();
+      final xml = _readDocumentXml(out!);
+      final allText = xml.descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 't')
+          .map((e) => e.innerText)
+          .join(' ');
+      expect(allText, contains('H'));
+      expect(allText, contains('Keep'));
+      expect(allText, isNot(contains('D1')));
+      expect(allText, isNot(contains('D2')));
+    });
+
     test('out-of-range indices throw', () async {
       final bytes = _buildDocx(
         '<w:p><w:r><w:t>only</w:t></w:r></w:p>',

@@ -471,8 +471,20 @@ class DocxTemplate {
       ..addAll(newChildren);
   }
 
-  /// Keep [keepHeaderRows] rows of the table at [tIdx] and replace all
-  /// remaining rows with a single SDT-wrapped templated row.
+  /// Keep [keepHeaderRows] rows of the table at [tIdx], then replace a
+  /// contiguous run of "data" rows starting at [keepHeaderRows] with a single
+  /// SDT-wrapped templated row. Any rows beyond that data run are preserved
+  /// verbatim, so this method is safe to use on tables that only partially
+  /// expand at fill time (e.g. an inspection form where one big table holds
+  /// header info, an irregularities sub-section, and trailing sign-off rows).
+  ///
+  /// The data run is determined by:
+  ///   - [dataRows] when explicitly provided (takes precedence), OR
+  ///   - auto-detection: walk forward from [keepHeaderRows] and stop at the
+  ///     first row whose `<w:tc>` count differs from the first data row's
+  ///     cell count. In typical Word forms, a section break is visible as a
+  ///     row whose merged-cell count drops to 1 (or jumps), so this
+  ///     heuristic correctly bounds the expandable section.
   ///
   /// The number of cells in the templated row should match the table's column
   /// count; if it doesn't, the row is written as-is and the table grid will
@@ -485,6 +497,7 @@ class DocxTemplate {
     required int keepHeaderRows,
     required TemplatedRow templateRow,
     SdtIdAllocator? idAllocator,
+    int? dataRows,
   }) {
     final table = _findTable(tIdx);
     final rows = table.children
@@ -502,9 +515,23 @@ class DocxTemplate {
     final shapeRow =
         rows.length > keepHeaderRows ? rows[keepHeaderRows] : rows.last;
 
+    // Determine how many data rows belong to the expandable section.
+    final detectedDataRows = _detectDataRowCount(
+      rows: rows,
+      keepHeaderRows: keepHeaderRows,
+      shapeRow: shapeRow,
+    );
+    final effectiveDataRows = dataRows != null
+        ? dataRows.clamp(0, rows.length - keepHeaderRows)
+        : detectedDataRows;
+    final dataEnd = keepHeaderRows + effectiveDataRows;
+
     final allocator = idAllocator ?? SdtIdAllocator();
-    final newDataRow =
-        _buildTemplatedRow(shapeRow: shapeRow, templateRow: templateRow, idAllocator: allocator);
+    final newDataRow = _buildTemplatedRow(
+      shapeRow: shapeRow,
+      templateRow: templateRow,
+      idAllocator: allocator,
+    );
 
     // The wrapper SDT must use the literal tag value "table" so the fill
     // pipeline (ViewManager._processSdt) classifies it as a RowView and
@@ -519,24 +546,66 @@ class DocxTemplate {
       contentChildren: [newDataRow],
     );
 
-    // Remove existing data rows; keep header rows in place; append wrapped row.
-    final keep = <XmlNode>[];
+    // Walk children in order. Replace tr rows in [keepHeaderRows, dataEnd)
+    // with a single wrapped row at the start of that range; keep header rows
+    // and any rows beyond dataEnd untouched. Non-tr children (tblPr, tblGrid,
+    // etc.) are preserved in place.
+    final out = <XmlNode>[];
     var trCount = 0;
+    var inserted = false;
     for (final node in table.children) {
       if (node is XmlElement && node.name.local == 'tr') {
         if (trCount < keepHeaderRows) {
-          keep.add(node.copy());
+          out.add(node.copy());
+        } else if (trCount < dataEnd) {
+          if (!inserted) {
+            out.add(wrappedRow);
+            inserted = true;
+          }
+          // Otherwise drop — this row is replaced by the wrapper.
+        } else {
+          // Trailing row beyond the data section — keep as-is.
+          out.add(node.copy());
         }
         trCount++;
       } else {
-        keep.add(node.copy());
+        out.add(node.copy());
       }
     }
-    keep.add(wrappedRow);
+    // Edge case: empty data section (effectiveDataRows == 0) — append the
+    // wrapper after any existing rows so the binding still resolves.
+    if (!inserted) out.add(wrappedRow);
 
     table.children
       ..clear()
-      ..addAll(keep);
+      ..addAll(out);
+  }
+
+  /// Count the contiguous run of rows starting at [keepHeaderRows] whose
+  /// `<w:tc>` count matches the [shapeRow]'s cell count. Returns at least 1
+  /// when there is room for a data row, so the templated wrapper always has
+  /// somewhere to live.
+  int _detectDataRowCount({
+    required List<XmlElement> rows,
+    required int keepHeaderRows,
+    required XmlElement shapeRow,
+  }) {
+    if (keepHeaderRows >= rows.length) return 0;
+    final shapeCellCount = shapeRow.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'tc')
+        .length;
+    var count = 0;
+    for (var i = keepHeaderRows; i < rows.length; i++) {
+      final cellCount = rows[i]
+          .children
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'tc')
+          .length;
+      if (cellCount != shapeCellCount) break;
+      count++;
+    }
+    return count == 0 ? 1 : count;
   }
 
   /// Replace the content of one cell in [tIdx]/[rowIdx] at [cellIdx]. The
