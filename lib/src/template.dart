@@ -958,7 +958,22 @@ class DocxTemplate {
         );
       }
 
-      cellChildren.add(XmlElement(w('p'), [], [paragraphContent]));
+      // Image SDTs (buildImageSdt) already contain a <w:p> inside
+      // their <w:sdtContent>. Wrapping that SDT in another <w:p>
+      // produces nested paragraphs at fill time when TagPolicy.removeAll
+      // unwraps the sdtContent into the outer paragraph — Word desktop
+      // tolerates the malformation, Word Online (Graph's PDF
+      // converter) rejects with `cannotOpenFile`.
+      //
+      // For image cells, drop the outer wrap and let the SDT's own
+      // inner paragraph become the tc's direct child after the SDT is
+      // unwrapped. Text SDTs are inline-level so they still need the
+      // outer <w:p> wrapper to be valid block-level content.
+      if (cellRecipe.image) {
+        cellChildren.add(paragraphContent);
+      } else {
+        cellChildren.add(XmlElement(w('p'), [], [paragraphContent]));
+      }
       newCells.add(XmlElement(w('tc'), [], cellChildren));
     }
 
