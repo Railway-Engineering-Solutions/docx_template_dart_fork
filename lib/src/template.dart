@@ -443,11 +443,23 @@ class DocxTemplate {
     String? sdtTag,
     String? sdtAlias,
     SdtIdAllocator? idAllocator,
+    String? backfillColorHex,
   }) {
     final paragraph = _findParagraph(pIdx);
     final pPr = paragraph.children
         .whereType<XmlElement>()
         .firstWhereOrNull((e) => e.name.local == 'pPr');
+
+    // Inherit the first existing run's <w:rPr> so the new placeholder
+    // run keeps the document's font/size — without this, Word renders
+    // the SDT in its default font (typically Calibri 11), which stands
+    // out against the body text. Optionally overlay a colour for
+    // visual distinction (e.g. blue for backfill fields).
+    final inheritedRpr = findFirstRunRpr(paragraph);
+    final placeholderRpr = rPrWithColor(
+      base: inheritedRpr,
+      hexColour: backfillColorHex,
+    );
 
     final newChildren = <XmlNode>[];
     if (pPr != null) newChildren.add(pPr.copy());
@@ -459,11 +471,11 @@ class DocxTemplate {
           tag: sdtTag,
           alias: sdtAlias ?? sdtTag,
           id: allocator.next(),
-          contentChildren: [buildRun(text: text)],
+          contentChildren: [buildRun(text: text, rPr: placeholderRpr)],
         ),
       );
     } else {
-      newChildren.add(buildRun(text: text));
+      newChildren.add(buildRun(text: text, rPr: placeholderRpr));
     }
 
     paragraph.children
@@ -498,6 +510,7 @@ class DocxTemplate {
     required TemplatedRow templateRow,
     SdtIdAllocator? idAllocator,
     int? dataRows,
+    String? backfillColorHex,
   }) {
     final table = _findTable(tIdx);
     final rows = table.children
@@ -531,6 +544,7 @@ class DocxTemplate {
       shapeRow: shapeRow,
       templateRow: templateRow,
       idAllocator: allocator,
+      backfillColorHex: backfillColorHex,
     );
 
     // The wrapper SDT must use the literal tag value "table" so the fill
@@ -627,6 +641,7 @@ class DocxTemplate {
     String? sdtTag,
     String? sdtAlias,
     SdtIdAllocator? idAllocator,
+    String? backfillColorHex,
   }) {
     final table = _findTable(tIdx);
     final rows = table.children
@@ -656,6 +671,15 @@ class DocxTemplate {
         .whereType<XmlElement>()
         .firstWhereOrNull((e) => e.name.local == 'tcPr');
 
+    // Inherit run properties from the cell's first existing run so the
+    // placeholder text keeps the cell's font/size, then optionally
+    // overlay the backfill colour.
+    final inheritedRpr = findFirstRunRpr(cell);
+    final placeholderRpr = rPrWithColor(
+      base: inheritedRpr,
+      hexColour: backfillColorHex,
+    );
+
     final w = (String local) => XmlName(local, 'w');
     final XmlElement paragraphContent;
     if (sdtTag != null) {
@@ -665,11 +689,13 @@ class DocxTemplate {
           tag: sdtTag,
           alias: sdtAlias ?? sdtTag,
           id: allocator.next(),
-          contentChildren: [buildRun(text: text)],
+          contentChildren: [buildRun(text: text, rPr: placeholderRpr)],
         ),
       ]);
     } else {
-      paragraphContent = XmlElement(w('p'), [], [buildRun(text: text)]);
+      paragraphContent = XmlElement(w('p'), [], [
+        buildRun(text: text, rPr: placeholderRpr),
+      ]);
     }
 
     cell.children
@@ -835,6 +861,7 @@ class DocxTemplate {
     required XmlElement shapeRow,
     required TemplatedRow templateRow,
     required SdtIdAllocator idAllocator,
+    String? backfillColorHex,
   }) {
     final w = (String local) => XmlName(local, 'w');
 
@@ -852,12 +879,22 @@ class DocxTemplate {
     for (var i = 0; i < templateRow.cells.length; i++) {
       final cellRecipe = templateRow.cells[i];
       // Preserve <w:tcPr> from the matching shape cell so column widths stay.
-      final shapeTcPr = i < shapeCells.length
-          ? shapeCells[i]
-              .children
+      final shapeCell = i < shapeCells.length ? shapeCells[i] : null;
+      final shapeTcPr = shapeCell != null
+          ? shapeCell.children
               .whereType<XmlElement>()
               .firstWhereOrNull((e) => e.name.local == 'tcPr')
           : null;
+
+      // Inherit run properties from the shape cell so per-column font
+      // and size choices carry through into the per-iteration runs the
+      // fill pipeline emits. Optionally overlay the backfill colour.
+      final inheritedRpr =
+          shapeCell != null ? findFirstRunRpr(shapeCell) : null;
+      final placeholderRpr = rPrWithColor(
+        base: inheritedRpr,
+        hexColour: backfillColorHex,
+      );
 
       final cellChildren = <XmlNode>[];
       if (shapeTcPr != null) cellChildren.add(shapeTcPr.copy());
@@ -913,7 +950,10 @@ class DocxTemplate {
           alias: cellRecipe.tag,
           id: idAllocator.next(),
           contentChildren: [
-            buildRun(text: cellRecipe.placeholder ?? ''),
+            buildRun(
+              text: cellRecipe.placeholder ?? '',
+              rPr: placeholderRpr,
+            ),
           ],
         );
       }

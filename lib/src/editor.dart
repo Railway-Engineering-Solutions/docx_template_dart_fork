@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:xml/xml.dart';
 
 /// Snapshot of the top-level body structure of a DOCX, addressable by stable
@@ -140,6 +141,47 @@ XmlElement buildRun({required String text, XmlElement? rPr}) {
     if (rPr != null) rPr,
     t,
   ]);
+}
+
+/// Returns a deep copy of the first `<w:rPr>` found inside any `<w:r>` that
+/// descends from [scope], or null when the scope contains no run with run
+/// properties. Used to inherit the surrounding run's font/size/colour onto
+/// freshly inserted SDT placeholder runs so backfill fields render in the
+/// document's natural style instead of Word's default Calibri 11.
+XmlElement? findFirstRunRpr(XmlElement scope) {
+  for (final descendant in scope.descendants) {
+    if (descendant is! XmlElement) continue;
+    if (descendant.name.local != 'r') continue;
+    final rPr = descendant.children
+        .whereType<XmlElement>()
+        .firstWhereOrNull((e) => e.name.local == 'rPr');
+    if (rPr != null) return rPr.copy();
+  }
+  return null;
+}
+
+/// Returns an rPr that inherits everything from [base] (or starts empty if
+/// null) and overrides the `<w:color>` child with [hexColour] (e.g.
+/// `0070C0`). Hex value should be 6 hex chars without `#`. Pass null to
+/// skip the colour override entirely — the original colour is preserved.
+XmlElement? rPrWithColor({XmlElement? base, String? hexColour}) {
+  if (hexColour == null) return base;
+  XmlName w(String local) => XmlName(local, 'w');
+
+  final clone = base != null
+      ? base.copy()
+      : XmlElement(w('rPr'), [], []);
+  // Strip any existing color child so we don't end up with two.
+  clone.children.removeWhere(
+    (n) => n is XmlElement && n.name.local == 'color',
+  );
+  // Insert color near the front for readability — Word doesn't care about
+  // child order inside rPr but it makes diffs easier to scan.
+  clone.children.insert(
+    0,
+    XmlElement(w('color'), [XmlAttribute(w('val'), hexColour)]),
+  );
+  return clone;
 }
 
 /// Builds a `<w:p>` containing a single run with [text]. Used when generating
