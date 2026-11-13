@@ -39,7 +39,7 @@ part of docx_view;
   }
 
   @override
-  XmlName visitName(XmlName name) => XmlName.fromString(name.qualified);
+  XmlName visitName(XmlName name) => XmlName.qualified(name.qualified);
 
   @override
   XmlProcessing visitProcessing(XmlProcessing node) =>
@@ -159,7 +159,7 @@ class XmlCopyVisitor with XmlVisitor {
 
   @override
   XmlName visitName(XmlName name) {
-    return XmlName.fromString(name.qualified);
+    return XmlName.qualified(name.qualified);
   }
 
   @override

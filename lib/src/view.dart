@@ -124,7 +124,7 @@ class TextView extends View<TextContent?> {
     }
   }
 
-  XmlElement _brElement() => XmlElement(XmlName('br', 'w'));
+  XmlElement _brElement() => XmlElement(XmlName.parts('br', prefix: 'w'));
 
   void _updateRText(ViewManager vm, XmlElement r, String? text) {
     final tIndex =
@@ -244,7 +244,7 @@ class ListView extends View<ListContent?> {
   String _getNewNumId(ViewManager vm, XmlElement list) {
     final numId = _getNumIdNode(list);
     if (numId != null) {
-      final idNode = numId.getAttributeNode('val', namespace: '*');
+      final idNode = numId.getAttributeNode('val', namespaceUri: '*');
       if (idNode != null) {
         final val = idNode.value;
         if (vm.numbering != null) {
@@ -261,9 +261,9 @@ class ListView extends View<ListContent?> {
   void _changeListId(XmlElement copy, String newId) {
     final numId = _getNumIdNode(copy);
     if (numId != null) {
-      final idNode = numId.getAttributeNode('val', namespace: '*');
+      final idNode = numId.getAttributeNode('val', namespaceUri: '*');
       numId.attributes.remove(idNode);
-      numId.attributes.add(XmlAttribute(XmlName('val', 'w'), newId));
+      numId.attributes.add(XmlAttribute(XmlName.parts('val', prefix: 'w'), newId));
     }
   }
 

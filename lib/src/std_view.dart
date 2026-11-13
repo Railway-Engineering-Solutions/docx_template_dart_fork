@@ -51,9 +51,9 @@ class SdtView {
     final rootSdt = SdtView(
         'root',
         'root',
-        XmlElement(XmlName('root')),
-        XmlElement(XmlName('root')),
-        XmlAttribute(XmlName('root'), ''),
+        XmlElement(XmlName.qualified('root')),
+        XmlElement(XmlName.qualified('root')),
+        XmlAttribute(XmlName.qualified('root'), ''),
         null, []);
 
     _addNextSdt(root, rootSdt);

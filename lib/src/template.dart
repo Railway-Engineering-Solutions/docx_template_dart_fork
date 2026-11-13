@@ -1,7 +1,6 @@
 import 'package:archive/archive.dart';
 import 'package:collection/collection.dart' show IterableExtension;
 import 'package:docx_template/docx_template.dart';
-import 'package:docx_template/src/tag_models.dart';
 import 'package:docx_template/src/view_manager.dart';
 import 'package:xml/xml.dart';
 
@@ -680,7 +679,7 @@ class DocxTemplate {
       hexColour: backfillColorHex,
     );
 
-    final w = (String local) => XmlName(local, 'w');
+    final w = (String local) => XmlName.parts(local, prefix: 'w');
     final XmlElement paragraphContent;
     if (sdtTag != null) {
       final allocator = idAllocator ?? SdtIdAllocator();
@@ -863,7 +862,7 @@ class DocxTemplate {
     required SdtIdAllocator idAllocator,
     String? backfillColorHex,
   }) {
-    final w = (String local) => XmlName(local, 'w');
+    final w = (String local) => XmlName.parts(local, prefix: 'w');
 
     // Copy <w:trPr> if present so row height/header settings are preserved.
     final trPr = shapeRow.children

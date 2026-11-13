@@ -42,8 +42,8 @@ class Numbering {
                 node is XmlElement && node.name.local == 'abstractNumId')
             as XmlElement;
 
-        final numIdStr = c.getAttribute('numId', namespace: '*')!;
-        final aNumIdStr = aIdElem.getAttribute('val', namespace: '*')!;
+        final numIdStr = c.getAttribute('numId', namespaceUri: '*')!;
+        final aNumIdStr = aIdElem.getAttribute('val', namespaceUri: '*')!;
         final n = _Num(int.parse(numIdStr), int.parse(aNumIdStr));
         map[numIdStr] = n;
 
@@ -85,7 +85,7 @@ class Numbering {
         .firstWhere((a) => a.name.local == 'abstractNumId');
     abstractNode.attributes.remove(attr);
     abstractNode.attributes
-        .add(XmlAttribute(XmlName('abstractNumId', 'w'), id.toString()));
+        .add(XmlAttribute(XmlName.parts('abstractNumId', prefix: 'w'), id.toString()));
   }
 
   void _findAndRemoveNsid(XmlElement abstractNode) {
@@ -95,11 +95,11 @@ class Numbering {
   }
 
   XmlElement createNumNode(_Num n) {
-    return XmlElement(XmlName('num', 'w'), [
-      XmlAttribute(XmlName('numId', 'w'), n.id.toString())
+    return XmlElement(XmlName.parts('num', prefix: 'w'), [
+      XmlAttribute(XmlName.parts('numId', prefix: 'w'), n.id.toString())
     ], [
-      XmlElement(XmlName('abstractNumId', 'w'),
-          [XmlAttribute(XmlName('val', 'w'), n.abstractId.toString())])
+      XmlElement(XmlName.parts('abstractNumId', prefix: 'w'),
+          [XmlAttribute(XmlName.parts('val', prefix: 'w'), n.abstractId.toString())])
     ]);
   }
 

@@ -90,3 +90,9 @@
   - `DocxTemplate.save()` — re-encode the edited archive without running fill.
 - New exports: `DocxEditableStructure`, `DocxParagraphInfo`, `DocxTableInfo`,
   `TemplatedRow`, `TemplatedCell`, `SdtIdAllocator`, `DocxTemplateException`.
+## 0.5.1
+- Dependencies: archive ^4.7.0, xml ^7.0.1, pdf ^3.13.1, lints ^6.1.0,
+  test ^1.33.0; SDK ^3.12.0. Verified on Flutter 3.50.0 / Dart 3.14.0.
+- Replace xml 7 deprecations: `XmlName(local, prefix)` → `XmlName.parts`,
+  `XmlName(q)` / `XmlName.fromString` → `XmlName.qualified`, `namespace:` →
+  `namespaceUri:` (same `'*'` wildcard). No behaviour change.

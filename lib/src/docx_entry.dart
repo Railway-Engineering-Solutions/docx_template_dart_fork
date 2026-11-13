@@ -173,11 +173,11 @@ class DocxRelsEntry extends DocxXmlEntry {
   }
 
   XmlElement _newRel(DocxRel rel) {
-    final r = XmlElement(XmlName('Relationship'));
+    final r = XmlElement(XmlName.qualified('Relationship'));
     r.attributes
-      ..add(XmlAttribute(XmlName('Id'), rel.id))
-      ..add(XmlAttribute(XmlName('Type'), rel.type))
-      ..add(XmlAttribute(XmlName('Target'), rel.target));
+      ..add(XmlAttribute(XmlName.qualified('Id'), rel.id))
+      ..add(XmlAttribute(XmlName.qualified('Type'), rel.type))
+      ..add(XmlAttribute(XmlName.qualified('Target'), rel.target));
     return r;
   }
 

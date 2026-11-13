@@ -5,7 +5,6 @@ import 'dart:collection';
 import 'package:collection/collection.dart' show IterableExtension;
 import 'package:docx_template/docx_template.dart';
 import 'package:docx_template/src/docx_entry.dart';
-import 'package:docx_template/src/template.dart';
 import 'package:path/path.dart' as path;
 import 'package:xml/xml.dart';
 
@@ -33,7 +32,7 @@ class ViewManager {
       {TagPolicy tagPolicy = TagPolicy.saveText,
       ImagePolicy imgPolicy = ImagePolicy.save}) {
     final root =
-        View(XmlName('root'), const [], const [], false, '', null, [], null);
+        View(XmlName.qualified('root'), const [], const [], false, '', null, [], null);
     final numbering = Numbering.from(docxMan);
 
     ViewManager vm =
@@ -102,33 +101,33 @@ class ViewManager {
 
       switch (sdtView.tag) {
         case "table":
-          v = RowView(XmlName("table"), [], sdtChilds, false, sdtView.name,
+          v = RowView(XmlName.qualified("table"), [], sdtChilds, false, sdtView.name,
               sdtView, [], parent);
           break;
         case "plain":
-          v = PlainView(XmlName("plain"), [], sdtChilds, false, sdtView.name,
+          v = PlainView(XmlName.qualified("plain"), [], sdtChilds, false, sdtView.name,
               sdtView, [], parent);
           break;
         case "text":
-          v = TextView(XmlName("text"), [], sdtChilds, false, sdtView.name,
+          v = TextView(XmlName.qualified("text"), [], sdtChilds, false, sdtView.name,
               sdtView, [], parent);
           break;
         case "list":
-          v = ListView(XmlName("list"), [], sdtChilds, false, sdtView.name,
+          v = ListView(XmlName.qualified("list"), [], sdtChilds, false, sdtView.name,
               sdtView, [], parent);
           break;
         case "img":
-          v = ImgView(XmlName("img"), [], sdtChilds, false, sdtView.name,
+          v = ImgView(XmlName.qualified("img"), [], sdtChilds, false, sdtView.name,
               sdtView, [], parent);
           break;
         case "link":
-          v = TextView(XmlName("link"), [], sdtChilds, false, sdtView.name,
+          v = TextView(XmlName.qualified("link"), [], sdtChilds, false, sdtView.name,
               sdtView, [], parent);
           break;
         default:
           // Treat unknown tags as text elements
           if (isTextTag) {
-            v = TextView(XmlName("text"), [], sdtChilds, false, sdtView.name,
+            v = TextView(XmlName.qualified("text"), [], sdtChilds, false, sdtView.name,
                 sdtView, [], parent);
           }
           break;

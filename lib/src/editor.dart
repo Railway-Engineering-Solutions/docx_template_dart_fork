@@ -111,7 +111,7 @@ XmlElement buildSdt({
   required String id,
   required List<XmlNode> contentChildren,
 }) {
-  XmlName w(String local) => XmlName(local, 'w');
+  XmlName w(String local) => XmlName.parts(local, prefix: 'w');
 
   XmlElement valEl(String local, String val) => XmlElement(
         w(local),
@@ -131,10 +131,10 @@ XmlElement buildSdt({
 
 /// Builds a `<w:r><w:t xml:space="preserve">text</w:t></w:r>` run.
 XmlElement buildRun({required String text, XmlElement? rPr}) {
-  XmlName w(String local) => XmlName(local, 'w');
+  XmlName w(String local) => XmlName.parts(local, prefix: 'w');
   final t = XmlElement(
     w('t'),
-    [XmlAttribute(XmlName('space', 'xml'), 'preserve')],
+    [XmlAttribute(XmlName.parts('space', prefix: 'xml'), 'preserve')],
     [XmlText(text)],
   );
   return XmlElement(w('r'), [], [
@@ -197,7 +197,7 @@ int _rPrChildSortKey(String localName) {
 /// MS Graph's PDF converter don't reject the output.
 XmlElement? rPrWithColor({XmlElement? base, String? hexColour}) {
   if (hexColour == null) return base;
-  XmlName w(String local) => XmlName(local, 'w');
+  XmlName w(String local) => XmlName.parts(local, prefix: 'w');
 
   final clone = base != null
       ? base.copy()
@@ -230,7 +230,7 @@ XmlElement? rPrWithColor({XmlElement? base, String? hexColour}) {
 /// Builds a `<w:p>` containing a single run with [text]. Used when generating
 /// fresh paragraphs (e.g. for templated table cells).
 XmlElement buildParagraph({required String text}) {
-  XmlName w(String local) => XmlName(local, 'w');
+  XmlName w(String local) => XmlName.parts(local, prefix: 'w');
   return XmlElement(w('p'), [], [buildRun(text: text)]);
 }
 
@@ -269,7 +269,7 @@ XmlElement buildImageSdt({
   required int heightEmu,
   required int docPrId,
 }) {
-  XmlName w(String local) => XmlName(local, 'w');
+  XmlName w(String local) => XmlName.parts(local, prefix: 'w');
 
   XmlElement valEl(String local, String val) => XmlElement(
         w(local),
@@ -285,27 +285,27 @@ XmlElement buildImageSdt({
   // Build the namespaced drawing tree. Word is fussy here — namespace
   // prefixes must match the schema URIs exactly for the file to open.
   final wpName =
-      (String l) => XmlName(l, 'wp');
+      (String l) => XmlName.parts(l, prefix: 'wp');
   final aName =
-      (String l) => XmlName(l, 'a');
+      (String l) => XmlName.parts(l, prefix: 'a');
   final picName =
-      (String l) => XmlName(l, 'pic');
+      (String l) => XmlName.parts(l, prefix: 'pic');
   final rName =
-      (String l) => XmlName(l, 'r');
+      (String l) => XmlName.parts(l, prefix: 'r');
 
   final extent = XmlElement(wpName('extent'), [
-    XmlAttribute(XmlName('cx'), widthEmu.toString()),
-    XmlAttribute(XmlName('cy'), heightEmu.toString()),
+    XmlAttribute(XmlName.qualified('cx'), widthEmu.toString()),
+    XmlAttribute(XmlName.qualified('cy'), heightEmu.toString()),
   ]);
   final docPr = XmlElement(wpName('docPr'), [
-    XmlAttribute(XmlName('id'), docPrId.toString()),
-    XmlAttribute(XmlName('name'), 'Picture $docPrId'),
+    XmlAttribute(XmlName.qualified('id'), docPrId.toString()),
+    XmlAttribute(XmlName.qualified('name'), 'Picture $docPrId'),
   ]);
   final cNvGraphicFramePr = XmlElement(wpName('cNvGraphicFramePr'));
 
   final cNvPr = XmlElement(picName('cNvPr'), [
-    XmlAttribute(XmlName('id'), '0'),
-    XmlAttribute(XmlName('name'), 'placeholder.png'),
+    XmlAttribute(XmlName.qualified('id'), '0'),
+    XmlAttribute(XmlName.qualified('name'), 'placeholder.png'),
   ]);
   final cNvPicPr = XmlElement(picName('cNvPicPr'));
   final nvPicPr = XmlElement(picName('nvPicPr'), [], [cNvPr, cNvPicPr]);
@@ -318,45 +318,45 @@ XmlElement buildImageSdt({
   final blipFill = XmlElement(picName('blipFill'), [], [blip, stretch]);
 
   final off = XmlElement(aName('off'), [
-    XmlAttribute(XmlName('x'), '0'),
-    XmlAttribute(XmlName('y'), '0'),
+    XmlAttribute(XmlName.qualified('x'), '0'),
+    XmlAttribute(XmlName.qualified('y'), '0'),
   ]);
   final ext = XmlElement(aName('ext'), [
-    XmlAttribute(XmlName('cx'), widthEmu.toString()),
-    XmlAttribute(XmlName('cy'), heightEmu.toString()),
+    XmlAttribute(XmlName.qualified('cx'), widthEmu.toString()),
+    XmlAttribute(XmlName.qualified('cy'), heightEmu.toString()),
   ]);
   final xfrm = XmlElement(aName('xfrm'), [], [off, ext]);
   final avLst = XmlElement(aName('avLst'));
   final prstGeom = XmlElement(aName('prstGeom'), [
-    XmlAttribute(XmlName('prst'), 'rect'),
+    XmlAttribute(XmlName.qualified('prst'), 'rect'),
   ], [avLst]);
   final spPr = XmlElement(picName('spPr'), [], [xfrm, prstGeom]);
 
   final pic = XmlElement(picName('pic'), [
     XmlAttribute(
-      XmlName('pic', 'xmlns'),
+      XmlName.parts('pic', prefix: 'xmlns'),
       'http://schemas.openxmlformats.org/drawingml/2006/picture',
     ),
   ], [nvPicPr, blipFill, spPr]);
 
   final graphicData = XmlElement(aName('graphicData'), [
     XmlAttribute(
-      XmlName('uri'),
+      XmlName.qualified('uri'),
       'http://schemas.openxmlformats.org/drawingml/2006/picture',
     ),
   ], [pic]);
   final graphic = XmlElement(aName('graphic'), [
     XmlAttribute(
-      XmlName('a', 'xmlns'),
+      XmlName.parts('a', prefix: 'xmlns'),
       'http://schemas.openxmlformats.org/drawingml/2006/main',
     ),
   ], [graphicData]);
 
   final inline = XmlElement(wpName('inline'), [
-    XmlAttribute(XmlName('distT'), '0'),
-    XmlAttribute(XmlName('distB'), '0'),
-    XmlAttribute(XmlName('distL'), '0'),
-    XmlAttribute(XmlName('distR'), '0'),
+    XmlAttribute(XmlName.qualified('distT'), '0'),
+    XmlAttribute(XmlName.qualified('distB'), '0'),
+    XmlAttribute(XmlName.qualified('distL'), '0'),
+    XmlAttribute(XmlName.qualified('distR'), '0'),
   ], [extent, docPr, cNvGraphicFramePr, graphic]);
 
   final drawing = XmlElement(w('drawing'), [], [inline]);

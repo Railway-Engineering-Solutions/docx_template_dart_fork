@@ -118,7 +118,7 @@ void main() {
       final tagEl = sdts.first.descendants
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'tag');
-      expect(tagEl.getAttribute('val', namespace: '*'), 'title');
+      expect(tagEl.getAttribute('val', namespaceUri: '*'), 'title');
     });
 
     test('rewriteTableRows keeps header and inserts wrapped templated row',
@@ -179,8 +179,8 @@ void main() {
       final wrapperAlias = wrapperSdtPr.children
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'alias');
-      expect(wrapperTag.getAttribute('val', namespace: '*'), 'table');
-      expect(wrapperAlias.getAttribute('val', namespace: '*'),
+      expect(wrapperTag.getAttribute('val', namespaceUri: '*'), 'table');
+      expect(wrapperAlias.getAttribute('val', namespaceUri: '*'),
           'step/1/checkitems');
 
       final innerRows = sdt.descendants
@@ -193,7 +193,7 @@ void main() {
       final cellAliases = innerRows.first.descendants
           .whereType<XmlElement>()
           .where((e) => e.name.local == 'alias')
-          .map((e) => e.getAttribute('val', namespace: '*'))
+          .map((e) => e.getAttribute('val', namespaceUri: '*'))
           .toList();
       expect(cellAliases, containsAll(['text', 'complete']));
     });
@@ -418,7 +418,7 @@ void main() {
       final wrapperAlias = sdt.descendants
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'alias');
-      expect(wrapperAlias.getAttribute('val', namespace: '*'), 'step/1/rows');
+      expect(wrapperAlias.getAttribute('val', namespaceUri: '*'), 'step/1/rows');
 
       // Trailing rows still carry their literal text — this is the
       // regression we're guarding against.
@@ -466,7 +466,7 @@ void main() {
       final aliases = xml.descendants
           .whereType<XmlElement>()
           .where((e) => e.name.local == 'alias')
-          .map((e) => e.getAttribute('val', namespace: '*'))
+          .map((e) => e.getAttribute('val', namespaceUri: '*'))
           .toList();
       expect(aliases, contains('step/1/rows'));
       expect(aliases, contains('date'));
@@ -481,13 +481,13 @@ void main() {
         final alias = sdt.descendants
             .whereType<XmlElement>()
             .firstWhere((e) => e.name.local == 'alias')
-            .getAttribute('val', namespace: '*');
+            .getAttribute('val', namespaceUri: '*');
         return alias == 'signee/signature';
       });
       final sigTag = sigSdt.descendants
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'tag')
-          .getAttribute('val', namespace: '*');
+          .getAttribute('val', namespaceUri: '*');
       expect(sigTag, 'img');
       // And it carries a <w:drawing> with a blip — the placeholder image
       // ImgView swaps at fill time.
@@ -504,13 +504,13 @@ void main() {
         final alias = sdt.descendants
             .whereType<XmlElement>()
             .firstWhere((e) => e.name.local == 'alias')
-            .getAttribute('val', namespace: '*');
+            .getAttribute('val', namespaceUri: '*');
         return alias == 'date';
       });
       final dateTag = dateSdt.descendants
           .whereType<XmlElement>()
           .firstWhere((e) => e.name.local == 'tag')
-          .getAttribute('val', namespace: '*');
+          .getAttribute('val', namespaceUri: '*');
       expect(dateTag, 'text');
     });
 
